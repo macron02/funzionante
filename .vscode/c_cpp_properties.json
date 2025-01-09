@@ -1,0 +1,32 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/source/gsoap-2.8/gsoap/plugin",
+                "${workspaceFolder}/source/gsoap-2.8/gsoap/custom"
+            ],
+            "defines": [
+                "WITH_OPENSSL",
+                "WITH_DOM",
+                "WITH_ZLIB"
+            ],
+            "compilerPath": "/usr/bin/g++",
+            "cppStandard": "gnu++17",
+            "cStandard": "c17",
+            "intelliSenseMode": "linux-gcc-x64",
+            "compilerArgs": [
+                "-Wall",
+                "-std=c++11",
+                "-DWITH_OPENSSL",
+                "-DWITH_DOM",
+                "-DWITH_ZLIB",
+                "-I.",
+                "-I${workspaceFolder}/source/gsoap-2.8/gsoap/plugin",
+                "-I${workspaceFolder}/source/gsoap-2.8/gsoap/custom"
+            ]
+        }
+    ],
+    "version": 4
+}
