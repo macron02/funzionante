@@ -17,12 +17,15 @@
 #include <string>
 #include <thread>  // Necessario per std::this_thread::sleep_for
 #include <chrono>  // Necessario per std::chrono::seconds
+#include <vector>
 
 
 
 #define USERNAME "admin"
 #define PASSWORD "Password_01"
 #define HOSTNAME "192.168.20.104"
+
+std::vector<std::string> _pullpointEndpoints;
 
 //int CRYPTO_thread_setup();
 void CRYPTO_thread_cleanup();
@@ -43,6 +46,15 @@ static void set_device_endpoint(DeviceBindingProxy *dev)
 	sprintf(soap_endpoint, "http://%s/onvif/device_service", HOSTNAME);
 
 	dev->soap_endpoint = soap_endpoint;
+}
+
+static void set_pull_endpoint(PullPointSubscriptionBindingProxy *dev)
+{
+  static char soap_endpoint[1024];
+	sprintf(soap_endpoint, "http://%s/onvif/device_service", HOSTNAME);
+
+	dev->soap_endpoint = soap_endpoint;
+
 }
 
 static void set_media_endpoint(MediaBindingProxy *dev)
@@ -78,99 +90,111 @@ void check_response(struct soap *soap)
 }
 
 // to download a snapshot and save it locally in the current dir as image-1.jpg, image-2.jpg, image-3.jpg ...
-void save_snapshot(int i, const char *endpoint)
-{
-    char filename[32];
-    (SOAP_SNPRINTF_SAFE(filename, 32), "image-%d.jpg", i);
-    FILE *fd = fopen(filename, "wb");
-    if (!fd)
-    {
-        std::cerr << "Cannot open " << filename << " for writing" << std::endl;
+struct soap* authenticate(const char* endpoint) {
+    // Creazione del contesto SOAP
+    struct soap* soap = soap_new();
+    if (!soap) {
+        std::cerr << "Errore nella creazione del contesto SOAP" << std::endl;
         exit(EXIT_FAILURE);
     }
 
-    // create a temporary context to retrieve the image with HTTP GET
-    struct soap *soap = soap_new();
-    // soap_register_plugin(soap, soap_wsse); // Registrare WS-Security nuovo
-    soap_register_plugin(soap, http_da);    // Registro plugin digest http autentication
-    struct http_da_info info;
-    
-    soap->connect_timeout = soap->recv_timeout = soap->send_timeout = 10; // 10 sec
+    // Registrazione del plugin HTTP Digest Authentication
+    soap_register_plugin(soap, http_da);
 
-    if (soap_ssl_client_context(soap, SOAP_SSL_NO_AUTHENTICATION, NULL, NULL, NULL, NULL, NULL)){
-        report_error(soap, __LINE__);
+    // Configurazione dei timeout
+    soap->connect_timeout = soap->recv_timeout = soap->send_timeout = 10; // 10 secondi
+
+    // Configurazione SSL (se necessario)
+    if (soap_ssl_client_context(soap, SOAP_SSL_NO_AUTHENTICATION, NULL, NULL, NULL, NULL, NULL)) {
+        std::cerr << "Errore nella configurazione SSL" << std::endl;
+        soap_destroy(soap);
+        soap_end(soap);
+        soap_free(soap);
+        exit(EXIT_FAILURE);
     }
 
-    std::cout << "GET " << endpoint << std::endl;
-
-    // First attempt with Digest Authentication
-    if (soap_GET(soap, endpoint, NULL) || soap_begin_recv(soap))
-    {
-        std::cout << "HTTP status: " << soap->status << " | Auth realm: " 
+    // Primo tentativo senza autenticazione
+    if (soap_GET(soap, endpoint, NULL) || soap_begin_recv(soap)) {
+        std::cout << "HTTP status: " << soap->status << " | Auth realm: "
                   << (soap->authrealm ? soap->authrealm : "None") << std::endl;
 
-        if (soap->status == 401 && soap->authrealm)
-        {
-            // Attempt with Digest Authentication
+        if (soap->status == 401 && soap->authrealm) {
+            // Tentativo con Digest Authentication
+            struct http_da_info info;
             std::cout << "Tentativo con Digest Authentication..." << std::endl;
-
             soap_strdup(soap, soap->authrealm);
             http_da_save(soap, &info, soap->authrealm, USERNAME, PASSWORD);
 
             if (soap_GET(soap, endpoint, NULL) || soap_begin_recv(soap)) {
-                std::cout << "Errore con Digest Authentication..." << std::endl;
+                std::cerr << "Errore con Digest Authentication..." << std::endl;
+                http_da_release(soap, &info);
+                soap_destroy(soap);
+                soap_end(soap);
+                soap_free(soap);
+                exit(EXIT_FAILURE);
             } else {
                 std::cout << "Autenticazione con Digest Authentication riuscita!" << std::endl;
             }
 
-            http_da_release(soap, &info); // release if auth is no longer needed
-        }
-        else
-        {
-            // Attempt with HTTP Basic Authentication
+            http_da_release(soap, &info);
+        } else {
+            // Tentativo con HTTP Basic Authentication
             std::cout << "Tentativo con HTTP Basic Authentication..." << std::endl;
             soap->userid = USERNAME;
             soap->passwd = PASSWORD;
-            if (soap_GET(soap, endpoint, NULL) || soap_begin_recv(soap))
-            {
+
+            if (soap_GET(soap, endpoint, NULL) || soap_begin_recv(soap)) {
                 std::cerr << "HTTP Basic Authentication fallita." << std::endl;
-                report_error(soap, __LINE__);
-            }
-            else
-            {
+                soap_destroy(soap);
+                soap_end(soap);
+                soap_free(soap);
+                exit(EXIT_FAILURE);
+            } else {
                 std::cout << "Autenticazione con HTTP Basic Authentication riuscita!" << std::endl;
             }
         }
-    }
-    else
-    {
-        std::cout << "Autenticazione con Digest Authentication riuscita!" << std::endl;
+    } else {
+        std::cout << "Autenticazione iniziale riuscita!" << std::endl;
     }
 
-    std::cout << "Retrieving " << filename;
-    if (soap->http_content)
-        std::cout << " of type " << soap->http_content;
-    std::cout << " from " << endpoint << std::endl;
+    // Termina la ricezione per completare il contesto SOAP
+    soap_end_recv(soap);
+
+    // Restituisce il contesto autenticato
+    return soap;
+}
+
+void save_snapshot(int i, const char* endpoint) {
+    char filename[32];
+    snprintf(filename, sizeof(filename), "image-%d.jpg", i);
+
+    FILE* fd = fopen(filename, "wb");
+    if (!fd) {
+        std::cerr << "Cannot open " << filename << " for writing" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    struct soap* soap = authenticate(endpoint);
+
+    std::cout << "Retrieving " << filename << " from " << endpoint << std::endl;
 
     size_t imagelen;
-    char *image = soap_http_get_body(soap, &imagelen); // NOTE: soap_http_get_body was renamed from soap_get_http_body in gSOAP 2.8.73
+    char* image = soap_http_get_body(soap, &imagelen);
     if (!image) {
         std::cerr << "Errore nel recupero del corpo HTTP" << std::endl;
         report_error(soap, __LINE__);
     }
-    soap_end_recv(soap);
 
     fwrite(image, 1, imagelen, fd);
     fclose(fd);
 
-    //cleanup
+    // Cleanup
     soap_destroy(soap);
     soap_end(soap);
     soap_free(soap);
 }
 
-
-/*
+// da commentare
 void get_pullpoints(struct soap *soap, const char *event_service_endpoint)
 {
   ///////////
@@ -179,11 +203,9 @@ void get_pullpoints(struct soap *soap, const char *event_service_endpoint)
     // Imposta l'endpoint del servizio eventi
     proxyEvent.soap_endpoint = event_service_endpoint;
     set_credentials(soap);
+    set_pull_endpoint(&proxyEvent);
     ////////////
 
-
-
-  
 
     // Preparazione della richiesta
     _tev__GetEventProperties getEventProperties;
@@ -209,6 +231,7 @@ void get_pullpoints(struct soap *soap, const char *event_service_endpoint)
       std::cout << "Suported topic: " << item << std::endl;
     }
 
+// funzioni che non mi servono al momento
     //for (auto item : getEventPropertiesResponse.FixedTopicSet) {
     //  std::cout << "Suported Fixedtopic: " << item << std::endl;
     //}
@@ -236,6 +259,9 @@ void get_pullpoints(struct soap *soap, const char *event_service_endpoint)
      {
          std::cout << "PullPoints disponibili:\n";
          for (const auto &topic : getEventPropertiesResponse.wstop__TopicSet->__any)
+
+//////////////////
+
          {
              if (topic)
              {
@@ -248,8 +274,7 @@ void get_pullpoints(struct soap *soap, const char *event_service_endpoint)
          std::cerr << "Errore: Nessun PullPoint trovato nel TopicSet." << std::endl;
      }
 }
-*/
-
+//thermal al momento da non usare
 /*
 void get_thermal_info(struct soap *soap, const std::string &profileToken) {
     // Inizializza il proxy per il servizio Media
@@ -266,6 +291,7 @@ void get_thermal_info(struct soap *soap, const std::string &profileToken) {
     }
     check_response(soap);
     */
+
 /*
     // Trova il VideoSourceToken corrispondente al profileToken
     std::string videoSourceToken;
@@ -309,7 +335,8 @@ void get_thermal_info(struct soap *soap, const std::string &profileToken) {
    /*if (proxyThermal.getRadiometryConfig(&getRadiometryConfig, getRadiometryConfigResponse)) {
        report_error(soap, __LINE__);
    }
-   */ /*
+   */
+   /*
    check_response(soap);
 
    if (getRadiometryConfigResponse.Configuration) {
@@ -319,7 +346,8 @@ void get_thermal_info(struct soap *soap, const std::string &profileToken) {
        std::cerr << "Failed to test" << getRadiometryConfigResponse.Configuration << std::endl;
    }
 /////////////////////////////////////
-*/ /*
+*/ 
+/*
 
        if (getRadiometryConfigResponse.Configuration) {
         const auto &config = getRadiometryConfigResponse.Configuration;
@@ -455,94 +483,67 @@ void subscribe_to_fire_event(struct soap *soap, const std::string &event_service
 }
 */
 
-/*
-void createPullPointSubscription(struct soap* soap, const char *event_service_endpoint) {
-    // Creazione del proxy per la sottoscrizione
+
+std::string createPullPointSubscription(struct soap* soap, const char* event_service_endpoint) {
     PullPointSubscriptionBindingProxy proxyEvent(soap);
     proxyEvent.soap_endpoint = event_service_endpoint;
-    set_credentials(soap);
 
-    std::cout<<"sono nella funzione"<<std::endl;
-
-    // Creazione della richiesta
     _tev__CreatePullPointSubscription request;
     _tev__CreatePullPointSubscriptionResponse response;
 
-    _wsnt__Unsubscribe                 Unsubscribe_req;	///< Input parameter
-    _wsnt__UnsubscribeResponse         UnsubscribeResponse;	///< Output parameter
-
-    proxyEvent.Unsubscribe(&Unsubscribe_req, UnsubscribeResponse);
-
-  /////////////////////// int prova = proxyEvent.Unsubscribe(&Unsubscribe_req, UnsubscribeResponse);
-    if(prova !=SOAP_OK){
-      report_error(soap, __LINE__);
-      return;
-    }
-//////////////////////////////
-
-
-    wsnt__AbsoluteOrRelativeTimeType initialTerminationTime;
-
-    initialTerminationTime  = "PT1H"; // 1 ora di durata (durata relativa)
+    wsnt__AbsoluteOrRelativeTimeType initialTerminationTime = "PT1H"; // 1 ora di durata (durata relativa)
     request.InitialTerminationTime = &initialTerminationTime;
 
-    // Invio della richiesta
     int ret = proxyEvent.CreatePullPointSubscription(&request, response);
     if (ret != SOAP_OK) {
-      //  soap_stream_fault(soap, std::cerr);
-        report_error(soap, __LINE__);
-        proxyEvent.Unsubscribe(&Unsubscribe_req, UnsubscribeResponse);
-        return;
+        std::cerr << "Errore nella creazione della sottoscrizione" << std::endl;
+        exit(EXIT_FAILURE);
     }
-    
 
-    // Gestione della risposta
-   // std::string address = response.SubscriptionReference.Address;
-  std::cout << "Subscription Address: " << response.SubscriptionReference.Address << std::endl;
+    return response.SubscriptionReference.Address;
+}
 
-   // std::cout << "Metadata: " << response.SubscriptionReference.Metadata << std::endl;
-    std::cout << "Termination Time: " << response.wsnt__TerminationTime << std::endl;
-    std::cout << "Current Time: " << response.wsnt__CurrentTime << std::endl;
+// Funzione per inviare la richiesta PullMessages
+void pullMessages(struct soap* soap, const std::string& endpoint) {
+    PullPointSubscriptionBindingProxy proxyPullPoint(soap);
+    proxyPullPoint.soap_endpoint = endpoint.c_str();
 
-    // Creazione dell'UUID per il messaggio
-    std::string uuid = std::string(soap_rand_uuid(soap, "urn:uuid:"));
-    struct SOAP_ENV__Header header;
-    header.wsa5__MessageID = (char*)uuid.c_str();
-    header.wsa5__To = response.SubscriptionReference.Address;
-    soap->header = &header;
-
-    // Creazione della richiesta PullMessages
     _tev__PullMessages pullRequest;
     pullRequest.Timeout = "60"; // Timeout in secondi
     pullRequest.MessageLimit = 10; // Numero massimo di messaggi
 
-    // Invio della richiesta PullMessages
     _tev__PullMessagesResponse pullResponse;
-    ret = proxyEvent.PullMessages(&pullRequest, pullResponse);
+    int ret = proxyPullPoint.PullMessages(&pullRequest, pullResponse);
     if (ret != SOAP_OK) {
-   //     soap_stream_fault(soap, std::cerr);
-        report_error(soap, __LINE__);
-        proxyEvent.Unsubscribe(&Unsubscribe_req, UnsubscribeResponse);
-        return;
+        std::cerr << "Errore nella richiesta PullMessages" << std::endl;
+        exit(EXIT_FAILURE);
     }
 
     // Elaborazione dei messaggi ricevuti
     for (const auto& message : pullResponse.wsnt__NotificationMessage) {
         std::cout << "Received message: " << message << std::endl;
     }
-
- //   _wsnt__Unsubscribe                 Unsubscribe_req;	///< Input parameter
- //   _wsnt__UnsubscribeResponse         UnsubscribeResponse;	///< Output parameter
-
-    proxyEvent.Unsubscribe(&Unsubscribe_req, UnsubscribeResponse);
 }
-*/
+
+// Funzione per l'operazione di Unsubscribe
+void unsubscribe(struct soap* soap, const std::string& endpoint) {
+    PullPointSubscriptionBindingProxy proxyEvent(soap);
+    proxyEvent.soap_endpoint = endpoint.c_str();
+
+    _wsnt__Unsubscribe unsubscribeRequest;
+    _wsnt__UnsubscribeResponse unsubscribeResponse;
+
+    int ret = proxyEvent.Unsubscribe(&unsubscribeRequest, unsubscribeResponse);
+    if (ret != SOAP_OK) {
+        std::cerr << "Errore nella richiesta di Unsubscribe" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+}
 
 //////////////////
 int main()
 {
  
-
   // make OpenSSL MT-safe with mutex
   //CRYPTO_thread_setup();
 
@@ -675,7 +676,8 @@ int main()
    /*if (proxyThermal.getRadiometryConfig(&getRadiometryConfig, getRadiometryConfigResponse)) {
        report_error(soap, __LINE__);
    }
-   */ /*
+   */
+   /*
    check_response(soap);
 
    if (getRadiometryConfigResponse.Configuration) {
@@ -704,17 +706,29 @@ int main()
 
     //get_thermal_info(soap, GetProfilesResponse.Profiles[i]->token);
 
-    
+//    const char *device_service = "http://192.168.20.104/onvif/event_service"; // Imposta l'endpoint del servizio eventi
 
-   // get_pullpoints(soap, device_service);
+
+  // get_pullpoints(soap, device_service);
    std::cout<<"sono prima del pull"<<std::endl;
    
     
   }
-   const char *device_service = "http://192.168.20.104/onvif/event_service"; // Imposta l'endpoint del servizio eventi
 
-  //createPullPointSubscription(soap, device_service);
-  
+   //struct soap* soap = soap_new();
+   // std::string endpoint = createPullPointSubscription(soap, event_service_endpoint);
+
+    // Autenticazione
+    //struct soap* authenticatedSoap = authenticate(endpoint.c_str());
+
+    // Invio della richiesta PullMessages
+    //pullMessages(authenticatedSoap, endpoint);
+
+    // Operazione di Unsubscribe
+    //unsubscribe(authenticatedSoap, endpoint);
+
+
+    
 
   
 
