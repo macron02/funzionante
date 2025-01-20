@@ -39,7 +39,7 @@ soapcpp2 -2 -I "${GSOAP_SOURCE}/import" "onvif.h" || exit 1
 (echo "#import \"wsse.h\""; cat "onvif.h") > temp_file && mv temp_file "onvif.h"
 
 soapcpp2 -2 -C -I "${GSOAP_SOURCE}/import" -I "${GSOAP_SOURCE}" -j -x onvif.h || exit 1
-oapcpp2 -a -x -L -pwsdd -I "${GSOAP_SOURCE}/import" "${GSOAP_SOURCE}/import/wsdd5.h" || exit 1
+soapcpp2 -a -x -L -pwsdd -I "${GSOAP_SOURCE}/import" "${GSOAP_SOURCE}/import/wsdd5.h" || exit 1
 fi
 
 cd "${SOURCE_DIR}" || exit 1
