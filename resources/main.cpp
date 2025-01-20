@@ -23,7 +23,7 @@
 
 #define USERNAME "admin"
 #define PASSWORD "Password_01"
-#define HOSTNAME "192.168.20.104"
+#define HOSTNAME "192.168.69.158"
 
 std::vector<std::string> _pullpointEndpoints;
 

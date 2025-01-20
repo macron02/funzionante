@@ -312,7 +312,7 @@ struct soap* authenticate(const char* endpoint) {
 	// Creazione del contesto SOAP
 	struct soap* soap = soap_new();
 	if (!soap) {
-		// std::cerr << "Errore nella creazione del contesto SOAP" << std::endl;
+	 std::cerr << "Errore nella creazione del contesto SOAP" << std::endl;
 		return NULL;
 	}
 
@@ -333,46 +333,45 @@ struct soap* authenticate(const char* endpoint) {
 
 	// Primo tentativo senza autenticazione
 	if (soap_GET(soap, endpoint, NULL) || soap_begin_recv(soap)) {
-		//  std::cout<< "TID: " << gettid()  << "HTTP status: " << soap->status << " | Auth realm: "
-		//         << (soap->authrealm ? soap->authrealm : "None") << std::endl;
-
+		  std::cout<< "TID: " << gettid()  << "HTTP status: " << soap->status << " | Auth realm: "
+		         << (soap->authrealm ? soap->authrealm : "None") << std::endl;
 		if (soap->status == 401 && soap->authrealm) {
 			// Tentativo con Digest Authentication
 			struct http_da_info info;
-			//   std::cout<< "TID: " << gettid()  << "Tentativo con Digest Authentication..." << std::endl;
+			   std::cout<< "TID: " << gettid()  << "Tentativo con Digest Authentication..." << std::endl;
 			soap_strdup(soap, soap->authrealm);
 			http_da_save(soap, &info, soap->authrealm, USERNAME, PASSWORD);
 
 			if (soap_GET(soap, endpoint, NULL) || soap_begin_recv(soap)) {
-				//std::cerr << "Errore con Digest Authentication..." << std::endl;
+				std::cerr << "Errore con Digest Authentication..." << std::endl;
 				http_da_release(soap, &info);
 				soap_destroy(soap);
 				soap_end(soap);
 				soap_free(soap);
 				return NULL;
 			} else {
-				//std::cout<< "TID: " << gettid()  << "Autenticazione con Digest Authentication riuscita!" << std::endl;
+				std::cout<< "TID: " << gettid()  << "Autenticazione con Digest Authentication riuscita!" << std::endl;
 			}
 
 			http_da_release(soap, &info);
 		} else {
-			// Tentativo con HTTP Basic Authentication
-			// std::cout<< "TID: " << gettid()  << "Tentativo con HTTP Basic Authentication..." << std::endl;
+			 //Tentativo con HTTP Basic Authentication
+			 std::cout<< "TID: " << gettid()  << "Tentativo con HTTP Basic Authentication..." << std::endl;
 			soap->userid = USERNAME;
 			soap->passwd = PASSWORD;
 
 			if (soap_GET(soap, endpoint, NULL) || soap_begin_recv(soap)) {
-				// std::cerr << "HTTP Basic Authentication fallita." << std::endl;
+				 std::cerr << "HTTP Basic Authentication fallita." << std::endl;
 				soap_destroy(soap);
 				soap_end(soap);
 				soap_free(soap);
 				return NULL;
 			} else {
-				// std::cout<< "TID: " << gettid()  << "Autenticazione con HTTP Basic Authentication riuscita!" << std::endl;
+				 std::cout<< "TID: " << gettid()  << "Autenticazione con HTTP Basic Authentication riuscita!" << std::endl;
 			}
 		}
 	} else {
-		//std::cout<< "TID: " << gettid()  << "Autenticazione iniziale riuscita!" << std::endl;
+		std::cout<< "TID: " << gettid()  << "Autenticazione iniziale riuscita!" << std::endl;
 	}
 
 	// Termina la ricezione per completare il contesto SOAP
@@ -969,7 +968,7 @@ int unsubscribe_from_pull_point(soap *soap, const std::string& xaddr) {
 
 	return SOAP_OK;
 }
-
+/*
 void set_video_encoder_configuration(struct soap* soap, const std::string& xaddr, const int width, const int height) {
 	std::cout<< "TID: "<< gettid() << "sono qui1" << std::endl;
     MediaBindingProxy proxyMedia(soap);
@@ -998,6 +997,8 @@ void set_video_encoder_configuration(struct soap* soap, const std::string& xaddr
 
     xaddr_mutex.unlock();
 
+	//xaddr_mutex.lock();
+
     // Usa il primo profilo disponibile
     for (const auto& profileToken : Profiletokenresponse) {
         _trt__SetVideoEncoderConfiguration SetVideoEncoderConfiguration;
@@ -1005,6 +1006,8 @@ void set_video_encoder_configuration(struct soap* soap, const std::string& xaddr
 
         // Prepara la configurazione del video encoder
         tt__VideoEncoderConfiguration config;
+
+		config.token = profileToken;
         config.Encoding = tt__VideoEncoding__H264;  // Impostazione codec H.264 (modificabile)
         config.Quality = 10.0f;  // Imposta la qualità (da 0 a 100)
 
@@ -1015,9 +1018,23 @@ void set_video_encoder_configuration(struct soap* soap, const std::string& xaddr
 
         // Imposta la configurazione
         SetVideoEncoderConfiguration.Configuration = &config;
+		//SetVideoEncoderConfiguration.Configuration->token = profileToken;
         SetVideoEncoderConfiguration.ForcePersistence = true;  // Assume che sia sempre true come suggerito
 
+
+		//SetVideoEncoderConfiguration.ProfileToken = profileToken;
+		
+			//std::cout<< "TID: " << gettid()  << "Snapshot URI: " << snapshot_uri << std::endl;
+
+		 authenticate(proxyMedia.soap_endpoint);
+
+
+
         set_credentials(soap);
+
+		xaddr_mutex.unlock();
+
+		//SetVideoEncoderConfiguration.ProfileToken = profileToken;
 
         // Invia la richiesta
         if (proxyMedia.SetVideoEncoderConfiguration(&SetVideoEncoderConfiguration, SetVideoEncoderConfigurationResponse)) {
@@ -1027,12 +1044,13 @@ void set_video_encoder_configuration(struct soap* soap, const std::string& xaddr
 
         check_response(soap);
 
-        // Verifica la risposta
-        std::cout << "Video encoder configuration set successfully!" << std::endl;
+        
+
+	
     }
 
 }
-
+*/
 
 
 
@@ -1061,6 +1079,7 @@ void send_probe_or_resolve(const std::string& url, const char* endpoint) {
 
 		// Chiamata Probe o Resolve
 		if (strlen(endpoint) == 0) {
+			std::cout << " linea 1082 Sending Probe request to " << MULTICAST_GROUP << ":" << PORT << std::endl;
 			res = soap_wsdd_Probe(serv,
 			                      SOAP_WSDD_ADHOC,      // ModalitC 
 			                      SOAP_WSDD_TO_TS,      // Destinazione a TS
@@ -1072,6 +1091,7 @@ void send_probe_or_resolve(const std::string& url, const char* endpoint) {
 			                      NULL);
 		} else {
 			// Invia richiesta di Resolve
+			std::cout << " linea 1094 Sending Resolve request to " << MULTICAST_GROUP << ":" << PORT << std::endl;
 			res = soap_wsdd_Resolve(serv,
 			                        SOAP_WSDD_ADHOC,      // ModalitC 
 			                        SOAP_WSDD_TO_TS,      // Destinazione a TS
@@ -1104,6 +1124,7 @@ void send_probe_or_resolve(const std::string& url, const char* endpoint) {
 			                      NULL);
 		} else {
 			// Invia richiesta di Resolve
+			std::cout << " linea 1127 Sending Resolve request to " << MULTICAST_GROUP << ":" << PORT << std::endl;
 			res = soap_wsdd_Resolve(serv,
 			                        SOAP_WSDD_MANAGED,      // ModalitC 
 			                        SOAP_WSDD_TO_DP,      // Destinazione a Proxy
@@ -1137,12 +1158,9 @@ void handle_camera(const std::string& xaddr) {
 
 	get_device_info(soap, xaddr);
     set_device_date_time(soap, xaddr);
-	std::cout<< "TID: "<< gettid() << "sono qui2" << std::endl;
 	get_device_capabilities(soap, xaddr);
-	std::cout<< "TID: "<< gettid() << "sono qui3" << std::endl;
 	get_device_profiles(soap, xaddr);
-	std::cout<< "TID: "<< gettid() << "sono qui" << std::endl;
-	set_video_encoder_configuration(soap, xaddr, 1920, 1080);
+	//set_video_encoder_configuration(soap, xaddr, 1920, 1080);
 
 
 
@@ -1183,16 +1201,23 @@ void handle_camera(const std::string& xaddr) {
 }
 
 int main() {
+	std::cout << "START" << std::endl;
 	std::string url = "soap.udp://239.255.255.250:3702";
+	std::cout << " 2" << std::endl;
 	const char* endpoint = "";
+	std::cout << " 3" << std::endl;
 	std::signal(SIGINT, signal_handler);
+	std::cout << " 4" << std::endl;
 
 
 	send_probe_or_resolve(url, endpoint);
+	std::cout << " 5" << std::endl;
 	std::vector<std::thread> camera_threads;
-
+	std::cout << " 6" << std::endl;
 	for (const auto& xaddr_element : get_xaddrs_vector()) {
+		std::cout << " 7" << std::endl;
 		camera_threads.emplace_back(std::thread(handle_camera, xaddr_element.xaddr));
+		std::cout << " 8" << std::endl;
 	}
 
 	for (auto& t : camera_threads) {
